@@ -3,7 +3,7 @@ from werkzeug.security import generate_password_hash,check_password_hash
 from sqlalchemy_utils import ScalarListType,force_auto_coercion
 from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer,BadSignature,SignatureExpired)
 from datetime import datetime
-from sqlalchemy_utils import ChoiceType
+from sqlalchemy_utils import ChoiceType,ScalarListType
 
 force_auto_coercion()
 
@@ -73,6 +73,7 @@ class Guser(db.Model):
     confirmed_on    =db.Column          (db.DateTime)
     mobileno        =db.Column          (db.String(20))
     hometown        =db.Column          (db.String(100))
+    links           =db.Column          (ScalarListType())
     educations      =db.relationship    ('Education',secondary='guserseducations',backref=db.backref("gusers",lazy="dynamic"))
     skills          =db.relationship    ('Skill',secondary="gusersskills",backref=db.backref("gusers",lazy="dynamic"))
     availabilities  =db.relationship    ('Availability',secondary="gusersavailabilities",backref=db.backref("gusers",lazy="dynamic"))
@@ -110,3 +111,40 @@ class Guser(db.Model):
 
     def __repr__(self):
         return "<User: %s>"%(self.username)
+
+class Gemployer(db.Model):
+    __tablename__="gemployer"
+    id                  =db.Column      (db.Integer,primary_key=True)
+    organization_name   =db.Column      (db.String(250),unique=True,index=True)
+    password            =db.Column      (db.String(200))
+    first_name          =db.Column      (db.String(150))
+    last_name           =db.Column      (db.String(150))
+    mobile_no           =db.Column      (db.String(20))
+
+    def __init__(self,organization_name):
+        self.organization_name=organization_name
+        self.set_password(password)
+
+
+    def set_password(self,password):
+        self.password=generate_password_hash(password)
+
+    def check_password(self,password):
+        return check_password_hash(self.password,password)
+
+    def generate_auth_token(self):
+        s=Serializer(app.config['SECRET_KEY'])
+        return s.dumps({'id':self.id})
+
+    @staticmethod
+    def verify_auth_token(token):
+        s=Serializer(app.config['SECRET_KEY'])
+        try:
+            data=s.loads(token)
+        except BadSignature:
+            return None
+        user=Guser.query.get(data['id'])
+        return user
+
+    def __repr__(self):
+        return "Organization Name : %s"%(self.organization_name)

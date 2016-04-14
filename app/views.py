@@ -16,11 +16,16 @@ def index():
 
 
 #helper function to verify password
+# remember that token guser is token_guser and for gemp token_gemp
 @auth.verify_password
 def verify_password(token):
     user=None
-    if request.json.has_key("token"):
-        user=Guser.verify_auth_token(request.json["token"])
+    if request.json.has_key("token_guser") and request.json.has_key("token_gemp"):
+        return False
+    if request.json.has_key("token_guser"):
+        user=Guser.verify_auth_token(request.json["token_guser"])
+    elif request.json.has_key("token_gemp"):
+        user=Gemployer.verify_auth_token(request.json["token_gemp"])
     if not user:
         return False
     else:
@@ -303,3 +308,63 @@ def show_all_preferences():
 @auth.login_required
 def show_all_user_preferences():
 	return after_request(jsonify({"user_preferences":g.user.preferences_serialize()}))
+
+@app.route("/add_organization",methods=["POST"])
+def add_organization():
+    data=request.json
+    err={}
+    if data.has_key("token_gemp") or data.has_key("token_guser"):
+        return after_request(jsonify({"err":"Already logged in cannot process this request."}))
+    k=helper_functions.satisfy_organization_name(data["organization_name"])
+    if k=="success":
+        gemp=Gemployers(organization_name=organization_name,password=data["password"])
+    else:
+        err["organization_name"]="Organization name doesn't meet expected criteria.Problem "+k
+    k=helper_functions.satisfy_email(data["emailid"])
+    if k=="success":
+        gemp.email_id=data["emailid"]
+    else:
+        err["emailid"]=k
+    k=helper_functions.satisfy_mobileno(data["mobileno"])
+    if k=="success":
+        gemp.mobileno=data["mobileno"]
+    else:
+        err["mobileno"]=k
+    k=helper_functions.satisfy_names(data["first_name"],data["last_name"])
+    if k=="success":
+        gemp.first_name=data["first_name"]
+        gemp.last_name=data["last_name"]
+    else:
+        err["first_name"]=k
+    if err.key().__len__()!=0:
+        return jsonify({"errs":err})
+    email_token=generate_confirmation_token(gemp.email)
+    confirm_url=url_for("confirm_email_gemp",token=email_token,_external=True)
+    html=render_template("activate_gemp.html",confirm_url=confirm_url)
+    subject="Please confirm your email"
+    send_email(gemp.emailid,subject,html)
+    token=gemp.generate_auth_token()
+    return jsonfiy({"token_gemp":token,"msg":"Email confirmation sent"})
+
+@app.route("/login",methods=["GET","POST"])
+def login():
+    if request.json.has_key("token_gemp") or request.has_key("token_guser"):
+        return after_request(jsonify({"msg":"looks like the user is already logged in"}))
+    data=request.json
+    username_or_email=data["username"]
+    if username.__contains__("@a"):
+        gemp=Gemployer.query.filter(Gemployer.emailid==username_or_email)
+        if gemp.count()==0:
+            return jsonify({"err":"No such user exists"})
+        elif gemp[0] and gemp[0].has_key("password") and gemp[0].check_password(data["password"]):
+            return jsonify({"token_gemp":gemp[0].generate_auth_token()})
+        else:
+            return jsonify({"err":"wrong credentials"})
+    else:
+        guser=Gemployer.query.filter(Gemployer.username==username_or_email)
+        if gemp.count()==0:
+            return jsonify({"msg":"No such user exists"})
+        elif gemp[0] and gemp[0].has_key("password") and gemp[0].check_password(data["password"]):
+            return jsonify({"token":gemp[0].generate_auth_token()})
+        else:
+            return jsonify({"err":"wrong credentials"})
